@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zerodha API Test Client</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .step {
+            margin-bottom: 30px;
+            padding: 15px;
+            border-left: 4px solid #007bff;
+            background-color: #f8f9fa;
+        }
+        .step h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            margin: 5px 0;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .response {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 4px;
+            padding: 15px;
+            margin: 10px 0;
+            white-space: pre-wrap;
+            font-family: monospace;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success {
+            background-color: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        .error {
+            background-color: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .authenticated {
+            background-color: #d4edda;
+            color: #155724;
+        }
+        .not-authenticated {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+        .stock-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .stock-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            border: 1px solid #dee2e6;
+        }
+        .stock-price {
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .stock-change {
+            font-weight: bold;
+        }
+        .positive {
+            color: #28a745;
+        }
+        .negative {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Zerodha API Test Client</h1>
+        <p>Server running on: <strong>http://localhost:30021</strong></p>
+        
+        <div id="authStatus" class="status not-authenticated">
+            ❌ Not Authenticated
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="step">
+            <h3>Step 1: Check Server Status</h3>
+            <button onclick="checkHealth()">Check Server Health</button>
+            <button onclick="checkAuthStatus()">Check Auth Status</button>
+            <div id="healthResponse" class="response" style="display: none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 2: Get Login URL</h3>
+            <button onclick="getLoginUrl()">Get Zerodha Login URL</button>
+            <div id="loginResponse" class="response" style="display: none;"></div>
+            <div id="loginLink" style="display: none; margin-top: 10px;">
+                <a id="loginLinkAnchor" href="#" target="_blank" style="color: #007bff; font-weight: bold;">
+                    🔗 Click here to login to Zerodha
+                </a>
+            </div>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Generate Session</h3>
+            <p>After logging in to Zerodha, you'll be redirected to a URL with a <code>request_token</code> parameter. Copy and paste that token here:</p>
+            <input type="text" id="requestToken" placeholder="Enter request_token from redirect URL" />
+            <br>
+            <button onclick="generateSession()">Generate Session</button>
+            <div id="sessionResponse" class="response" style="display: none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 4: Get User Profile</h3>
+            <button onclick="getUserProfile()" id="profileBtn" disabled>Get User Profile</button>
+            <div id="profileResponse" class="response" style="display: none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 5: Get Live Market Data</h3>
+            <button onclick="getLiveQuotes()" id="quotesBtn" disabled>Get Live Quotes (NSE)</button>
+            <button onclick="getMcxQuotes()" id="mcxBtn" disabled>Get MCX Quotes</button>
+            <button onclick="getLTP()" id="ltpBtn" disabled>Get Last Traded Prices</button>
+            <div id="quotesResponse" class="response" style="display: none;"></div>
+            <div id="liveData" class="stock-grid" style="display: none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 6: Auto-Refresh Live Data</h3>
+            <button onclick="startAutoRefresh()" id="autoRefreshBtn" disabled>Start Auto Refresh (5s)</button>
+            <button onclick="stopAutoRefresh()" id="stopRefreshBtn" disabled>Stop Auto Refresh</button>
+            <div id="autoRefreshStatus" style="margin-top: 10px;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:30021/api';
+        let isAuthenticated = false;
+        let autoRefreshInterval = null;
+
+        // Popular NSE stocks
+        const NSE_INSTRUMENTS = [
+            'NSE:INFY',
+            'NSE:TCS', 
+            'NSE:RELIANCE',
+            'NSE:HDFCBANK',
+            'NSE:ICICIBANK'
+        ];
+
+        // Popular MCX commodities
+        const MCX_INSTRUMENTS = [
+            'MCX:GOLD24DECFUT',
+            'MCX:SILVER24DECFUT',
+            'MCX:CRUDEOIL24DECFUT'
+        ];
+
+        async function makeRequest(endpoint, options = {}) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                const data = await response.json();
+                return { success: response.ok, data, status: response.status };
+            } catch (error) {
+                return { success: false, error: error.message };
+            }
+        }
+
+        function displayResponse(elementId, response, isSuccess = null) {
+            const element = document.getElementById(elementId);
+            element.style.display = 'block';
+            element.textContent = JSON.stringify(response, null, 2);
+            
+            if (isSuccess !== null) {
+                element.className = `response ${isSuccess ? 'success' : 'error'}`;
+            }
+        }
+
+        function updateAuthStatus(authenticated, user = null) {
+            isAuthenticated = authenticated;
+            const statusElement = document.getElementById('authStatus');
+            
+            if (authenticated) {
+                statusElement.className = 'status authenticated';
+                statusElement.textContent = `✅ Authenticated${user ? ` as ${user.user_name}` : ''}`;
+                
+                // Enable authenticated buttons
+                document.getElementById('profileBtn').disabled = false;
+                document.getElementById('quotesBtn').disabled = false;
+                document.getElementById('mcxBtn').disabled = false;
+                document.getElementById('ltpBtn').disabled = false;
+                document.getElementById('autoRefreshBtn').disabled = false;
+            } else {
+                statusElement.className = 'status not-authenticated';
+                statusElement.textContent = '❌ Not Authenticated';
+                
+                // Disable authenticated buttons
+                document.getElementById('profileBtn').disabled = true;
+                document.getElementById('quotesBtn').disabled = true;
+                document.getElementById('mcxBtn').disabled = true;
+                document.getElementById('ltpBtn').disabled = true;
+                document.getElementById('autoRefreshBtn').disabled = true;
+            }
+        }
+
+        async function checkHealth() {
+            const result = await makeRequest('/health');
+            displayResponse('healthResponse', result.data, result.success);
+        }
+
+        async function checkAuthStatus() {
+            const result = await makeRequest('/auth/status');
+            displayResponse('healthResponse', result.data, result.success);
+            
+            if (result.success) {
+                updateAuthStatus(result.data.authenticated, result.data.user);
+            }
+        }
+
+        async function getLoginUrl() {
+            const result = await makeRequest('/auth/login-url');
+            displayResponse('loginResponse', result.data, result.success);
+            
+            if (result.success && result.data.loginUrl) {
+                const linkElement = document.getElementById('loginLink');
+                const anchorElement = document.getElementById('loginLinkAnchor');
+                anchorElement.href = result.data.loginUrl;
+                linkElement.style.display = 'block';
+            }
+        }
+
+        async function generateSession() {
+            const requestToken = document.getElementById('requestToken').value.trim();
+            
+            if (!requestToken) {
+                alert('Please enter the request token');
+                return;
+            }
+
+            const result = await makeRequest('/auth/session', {
+                method: 'POST',
+                body: JSON.stringify({ request_token: requestToken })
+            });
+
+            displayResponse('sessionResponse', result.data, result.success);
+            
+            if (result.success) {
+                updateAuthStatus(true, result.data.user);
+            }
+        }
+
+        async function getUserProfile() {
+            const result = await makeRequest('/profile');
+            displayResponse('profileResponse', result.data, result.success);
+        }
+
+        async function getLiveQuotes() {
+            const result = await makeRequest('/quotes', {
+                method: 'POST',
+                body: JSON.stringify({ instruments: NSE_INSTRUMENTS })
+            });
+
+            displayResponse('quotesResponse', result.data, result.success);
+            
+            if (result.success) {
+                displayLiveData(result.data, 'NSE');
+            }
+        }
+
+        async function getMcxQuotes() {
+            const result = await makeRequest('/quotes', {
+                method: 'POST',
+                body: JSON.stringify({ instruments: MCX_INSTRUMENTS })
+            });
+
+            displayResponse('quotesResponse', result.data, result.success);
+            
+            if (result.success) {
+                displayLiveData(result.data, 'MCX');
+            }
+        }
+
+        async function getLTP() {
+            const result = await makeRequest('/ltp', {
+                method: 'POST',
+                body: JSON.stringify({ instruments: [...NSE_INSTRUMENTS, ...MCX_INSTRUMENTS] })
+            });
+
+            displayResponse('quotesResponse', result.data, result.success);
+            
+            if (result.success) {
+                displayLTPData(result.data);
+            }
+        }
+
+        function displayLiveData(data, market) {
+            const liveDataElement = document.getElementById('liveData');
+            liveDataElement.style.display = 'block';
+            liveDataElement.innerHTML = '';
+
+            Object.keys(data).forEach(instrument => {
+                const quote = data[instrument];
+                const card = document.createElement('div');
+                card.className = 'stock-card';
+                
+                const change = quote.net_change || 0;
+                const changePercent = quote.ohlc ? ((quote.last_price - quote.ohlc.open) / quote.ohlc.open * 100) : 0;
+                
+                card.innerHTML = `
+                    <h4>${instrument.split(':')[1]} (${market})</h4>
+                    <div class="stock-price">₹${quote.last_price || 'N/A'}</div>
+                    <div class="stock-change ${change >= 0 ? 'positive' : 'negative'}">
+                        ${change >= 0 ? '+' : ''}${change.toFixed(2)} (${changePercent.toFixed(2)}%)
+                    </div>
+                    <div style="margin-top: 10px; font-size: 0.9em;">
+                        <div>Open: ₹${quote.ohlc?.open || 'N/A'}</div>
+                        <div>High: ₹${quote.ohlc?.high || 'N/A'}</div>
+                        <div>Low: ₹${quote.ohlc?.low || 'N/A'}</div>
+                        <div>Volume: ${quote.volume || 'N/A'}</div>
+                    </div>
+                `;
+                
+                liveDataElement.appendChild(card);
+            });
+        }
+
+        function displayLTPData(data) {
+            const liveDataElement = document.getElementById('liveData');
+            liveDataElement.style.display = 'block';
+            liveDataElement.innerHTML = '';
+
+            Object.keys(data).forEach(instrument => {
+                const ltp = data[instrument];
+                const card = document.createElement('div');
+                card.className = 'stock-card';
+                
+                card.innerHTML = `
+                    <h4>${instrument.split(':')[1]}</h4>
+                    <div class="stock-price">₹${ltp.last_price || 'N/A'}</div>
+                    <div style="margin-top: 10px; font-size: 0.9em;">
+                        <div>Last Traded Price</div>
+                        <div>Updated: ${new Date().toLocaleTimeString()}</div>
+                    </div>
+                `;
+                
+                liveDataElement.appendChild(card);
+            });
+        }
+
+        async function startAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+            }
+
+            document.getElementById('autoRefreshBtn').disabled = true;
+            document.getElementById('stopRefreshBtn').disabled = false;
+            
+            const statusElement = document.getElementById('autoRefreshStatus');
+            statusElement.textContent = '🔄 Auto-refresh started (every 5 seconds)';
+            
+            autoRefreshInterval = setInterval(async () => {
+                await getLiveQuotes();
+                statusElement.textContent = `🔄 Last updated: ${new Date().toLocaleTimeString()}`;
+            }, 5000);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+            
+            document.getElementById('autoRefreshBtn').disabled = false;
+            document.getElementById('stopRefreshBtn').disabled = true;
+            document.getElementById('autoRefreshStatus').textContent = '⏹️ Auto-refresh stopped';
+        }
+
+        // Initialize
+        checkAuthStatus();
+    </script>
+</body>
+</html>
